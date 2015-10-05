@@ -131,7 +131,7 @@
 		if(hasHeaders) {
       NSRange range = [data rangeOfData:[line dataUsingEncoding:NSUTF8StringEncoding] options:0 range:NSMakeRange(0, [data length])];
       if (range.location != NSNotFound) {
-        data = [data subdataWithRange:NSMakeRange(range.location, data.length - range.location)];
+        body = [data subdataWithRange:NSMakeRange(range.location, data.length - range.location)];
       }
 		} else {
 			if ([line isEqual:@""]) {
