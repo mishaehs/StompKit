@@ -10,5 +10,5 @@ Pod::Spec.new do |s|
   s.source_files = 'StompKit/*.{h,m}'
   s.public_header_files = 'StompKit/StompKit.h'
   s.requires_arc = true
-  s.dependency 'CocoaAsyncSocket', :git => 'https://github.com/mishaehs/CocoaAsyncSocket.git'
+
 end
