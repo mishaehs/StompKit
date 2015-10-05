@@ -44,7 +44,7 @@ typedef void (^STOMPMessageHandler)(STOMPMessage *message);
 
 @property (nonatomic, copy, readonly) NSString *command;
 @property (nonatomic, copy, readonly) NSDictionary *headers;
-@property (nonatomic, copy, readonly) NSString *body;
+@property (nonatomic, copy, readonly) NSData *body;
 
 @end
 
@@ -86,7 +86,6 @@ typedef void (^STOMPMessageHandler)(STOMPMessage *message);
 
 @property (nonatomic, copy) STOMPFrameHandler receiptHandler;
 @property (nonatomic, copy) void (^errorHandler)(NSError *error);
-@property (nonatomic, assign) BOOL connected;
 
 - (id)initWithHost:(NSString *)theHost
 			  port:(NSUInteger)thePort;
@@ -98,10 +97,10 @@ typedef void (^STOMPMessageHandler)(STOMPMessage *message);
          completionHandler:(void (^)(STOMPFrame *connectedFrame, NSError *error))completionHandler;
 
 - (void)sendTo:(NSString *)destination
-          body:(NSString *)body;
+          body:(NSData *)body;
 - (void)sendTo:(NSString *)destination
        headers:(NSDictionary *)headers
-          body:(NSString *)body;
+          body:(NSData *)body;
 
 - (STOMPSubscription *)subscribeTo:(NSString *)destination
                     messageHandler:(STOMPMessageHandler)handler;

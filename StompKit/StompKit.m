@@ -76,7 +76,7 @@
 
 - (id)initWithCommand:(NSString *)theCommand
               headers:(NSDictionary *)theHeaders
-                 body:(NSString *)theBody;
+                 body:(NSData *)theBody;
 
 - (NSData *)toData;
 
@@ -88,7 +88,7 @@
 
 - (id)initWithCommand:(NSString *)theCommand
               headers:(NSDictionary *)theHeaders
-                 body:(NSString *)theBody {
+                 body:(NSData *)theBody {
     if(self = [super init]) {
         command = theCommand;
         headers = theHeaders;
@@ -104,7 +104,7 @@
 	}
     [frame appendString:kLineFeed];
 	if (self.body) {
-		[frame appendString:self.body];
+		[frame appendString:[[NSString alloc] initWithData:self.body encoding:NSUTF8StringEncoding]];
 	}
     [frame appendString:kNullChar];
     return frame;
@@ -115,26 +115,24 @@
 }
 
 + (STOMPFrame *) STOMPFrameFromData:(NSData *)data {
-    NSData *strData = [data subdataWithRange:NSMakeRange(0, [data length])];
+    NSData *strData = [data subdataWithRange:NSMakeRange(0, MIN(500, data.length))];
 	NSString *msg = [[NSString alloc] initWithData:strData encoding:NSUTF8StringEncoding];
     LogDebug(@"<<< %@", msg);
     NSMutableArray *contents = (NSMutableArray *)[[msg componentsSeparatedByString:kLineFeed] mutableCopy];
-    while ([contents count] > 0 && [contents[0] isEqual:@""]) {
-        [contents removeObjectAtIndex:0];
-    }
+	if([[contents objectAtIndex:0] isEqual:@""]) {
+		[contents removeObjectAtIndex:0];
+	}
 	NSString *command = [[contents objectAtIndex:0] copy];
 	NSMutableDictionary *headers = [[NSMutableDictionary alloc] init];
-	NSMutableString *body = [[NSMutableString alloc] init];
+  NSData *body = nil;
 	BOOL hasHeaders = NO;
     [contents removeObjectAtIndex:0];
 	for(NSString *line in contents) {
 		if(hasHeaders) {
-            for (int i=0; i < [line length]; i++) {
-                unichar c = [line characterAtIndex:i];
-                if (c != '\x00') {
-                    [body appendString:[NSString stringWithFormat:@"%c", c]];
-                }
-            }
+      NSRange range = [data rangeOfData:[line dataUsingEncoding:NSUTF8StringEncoding] options:0 range:NSMakeRange(0, [data length])];
+      if (range.location != NSNotFound) {
+        data = [data subdataWithRange:NSMakeRange(range.location, data.length - range.location)];
+      }
 		} else {
 			if ([line isEqual:@""]) {
 				hasHeaders = YES;
@@ -174,7 +172,7 @@
 
 - (id)initWithClient:(STOMPClient *)theClient
              headers:(NSDictionary *)theHeaders
-                body:(NSString *)theBody {
+                body:(NSData *)theBody {
     if (self = [super initWithCommand:kCommandMessage
                               headers:theHeaders
                                  body:theBody]) {
@@ -303,6 +301,7 @@
 @synthesize subscriptions;
 @synthesize pinger, ponger;
 
+BOOL connected;
 int idGenerator;
 CFAbsoluteTime serverActivity;
 
@@ -317,7 +316,7 @@ CFAbsoluteTime serverActivity;
         self.host = aHost;
         self.port = aPort;
         idGenerator = 0;
-        self.connected = NO;
+        connected = NO;
         self.subscriptions = [[NSMutableDictionary alloc] init];
         self.clientHeartBeat = @"5000,10000";
 	}
@@ -349,8 +348,6 @@ CFAbsoluteTime serverActivity;
     }
     if (!connectHeaders[kHeaderHeartBeat]) {
         connectHeaders[kHeaderHeartBeat] = self.clientHeartBeat;
-    } else {
-        self.clientHeartBeat = connectHeaders[kHeaderHeartBeat];
     }
 
     [self sendFrameWithCommand:kCommandConnect
@@ -359,7 +356,7 @@ CFAbsoluteTime serverActivity;
 }
 
 - (void)sendTo:(NSString *)destination
-          body:(NSString *)body {
+          body:(NSData *)body {
     [self sendTo:destination
          headers:nil
             body:body];
@@ -371,7 +368,7 @@ CFAbsoluteTime serverActivity;
 	NSMutableDictionary *msgHeaders = [NSMutableDictionary dictionaryWithDictionary:headers];
     msgHeaders[kHeaderDestination] = destination;
     if (body) {
-        msgHeaders[kHeaderContentLength] = [NSNumber numberWithLong:[body length]];
+        msgHeaders[kHeaderContentLength] = [NSNumber numberWithInt:[body length]];
     }
     [self sendFrameWithCommand:kCommandSend
                        headers:msgHeaders
@@ -435,7 +432,7 @@ CFAbsoluteTime serverActivity;
 
 - (void)sendFrameWithCommand:(NSString *)command
                      headers:(NSDictionary *)headers
-                        body:(NSString *)body {
+                        body:(NSData *)body {
     if ([self.socket isDisconnected]) {
         return;
     }
@@ -485,20 +482,16 @@ CFAbsoluteTime serverActivity;
     LogDebug(@"expect to receive heart-beats every %ld seconds", pongTTL);
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (pingTTL > 0) {
-            self.pinger = [NSTimer scheduledTimerWithTimeInterval: pingTTL
-                                                           target: self
-                                                         selector: @selector(sendPing:)
-                                                         userInfo: nil
-                                                          repeats: YES];
-        }
-        if (pongTTL > 0) {
-            self.ponger = [NSTimer scheduledTimerWithTimeInterval: pongTTL
-                                                           target: self
-                                                         selector: @selector(checkPong:)
-                                                         userInfo: @{@"ttl": [NSNumber numberWithInteger:pongTTL]}
-                                                          repeats: YES];
-        }
+        self.pinger = [NSTimer scheduledTimerWithTimeInterval: pingTTL
+                                                       target: self
+                                                     selector: @selector(sendPing:)
+                                                     userInfo: nil
+                                                      repeats: YES];
+        self.ponger = [NSTimer scheduledTimerWithTimeInterval: pongTTL
+                                                       target: self
+                                                     selector: @selector(checkPong:)
+                                                     userInfo: @{@"ttl": [NSNumber numberWithInteger:pongTTL]}
+                                                      repeats: YES];
     });
 
 }
@@ -506,7 +499,7 @@ CFAbsoluteTime serverActivity;
 - (void)receivedFrame:(STOMPFrame *)frame {
     // CONNECTED
     if([kCommandConnected isEqual:frame.command]) {
-        self.connected = YES;
+        connected = YES;
         [self setupHeartBeatWithClient:self.clientHeartBeat server:frame.headers[kHeaderHeartBeat]];
         if (self.connectionCompletionHandler) {
             self.connectionCompletionHandler(frame, nil);
@@ -529,19 +522,13 @@ CFAbsoluteTime serverActivity;
         // ERROR
 	} else if([kCommandError isEqual:frame.command]) {
         NSError *error = [[NSError alloc] initWithDomain:@"StompKit" code:1 userInfo:@{@"frame": frame}];
-        // ERROR coming after the CONNECT frame
-        if (!self.connected && self.connectionCompletionHandler) {
+        if (self.connectionCompletionHandler) {
             self.connectionCompletionHandler(frame, error);
-        } else if (self.errorHandler) {
-            self.errorHandler(error);
-        } else {
-            LogDebug(@"Unhandled ERROR frame: %@", frame);
         }
 	} else {
         NSError *error = [[NSError alloc] initWithDomain:@"StompKit"
                                                     code:2
-                                                userInfo:@{@"message": [NSString stringWithFormat:@"Unknown frame %@", frame.command],
-                                                           @"frame": frame}];
+                                                userInfo:@{@"message": [NSString stringWithFormat:@"Unknown frame %@", frame.command]}];
         if (self.errorHandler) {
             self.errorHandler(error);
         }
@@ -576,16 +563,16 @@ CFAbsoluteTime serverActivity;
 - (void)socketDidDisconnect:(GCDAsyncSocket *)sock
                   withError:(NSError *)err {
     LogDebug(@"socket did disconnect");
-    if (!self.connected && self.connectionCompletionHandler) {
+    if (!connected && self.connectionCompletionHandler) {
         self.connectionCompletionHandler(nil, err);
-    } else if (self.connected) {
+    } else if (connected) {
         if (self.disconnectedHandler) {
             self.disconnectedHandler(err);
         } else if (self.errorHandler) {
             self.errorHandler(err);
         }
     }
-    self.connected = NO;
+    connected = NO;
 }
 
 @end
