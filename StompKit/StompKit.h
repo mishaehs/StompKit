@@ -44,7 +44,7 @@ typedef void (^STOMPMessageHandler)(STOMPMessage *message);
 
 @property (nonatomic, copy, readonly) NSString *command;
 @property (nonatomic, copy, readonly) NSDictionary *headers;
-@property (nonatomic, copy, readonly) NSData *body;
+@property (nonatomic, copy, readonly) NSString *body;
 
 @end
 
@@ -97,10 +97,10 @@ typedef void (^STOMPMessageHandler)(STOMPMessage *message);
          completionHandler:(void (^)(STOMPFrame *connectedFrame, NSError *error))completionHandler;
 
 - (void)sendTo:(NSString *)destination
-          body:(NSData *)body;
+          body:(NSString *)body;
 - (void)sendTo:(NSString *)destination
        headers:(NSDictionary *)headers
-          body:(NSData *)body;
+          body:(NSString *)body;
 
 - (STOMPSubscription *)subscribeTo:(NSString *)destination
                     messageHandler:(STOMPMessageHandler)handler;
