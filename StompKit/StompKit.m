@@ -76,7 +76,7 @@
 
 - (id)initWithCommand:(NSString *)theCommand
               headers:(NSDictionary *)theHeaders
-                 body:(NSData *)theBody;
+                 body:(NSString *)theBody;
 
 - (NSData *)toData;
 
@@ -88,7 +88,7 @@
 
 - (id)initWithCommand:(NSString *)theCommand
               headers:(NSDictionary *)theHeaders
-                 body:(NSData *)theBody {
+                 body:(NSString *)theBody {
     if(self = [super init]) {
         command = theCommand;
         headers = theHeaders;
@@ -104,7 +104,7 @@
 	}
     [frame appendString:kLineFeed];
 	if (self.body) {
-		[frame appendString:[[NSString alloc] initWithData:self.body encoding:NSUTF8StringEncoding]];
+		[frame appendString:self.body];
 	}
     [frame appendString:kNullChar];
     return frame;
@@ -115,24 +115,26 @@
 }
 
 + (STOMPFrame *) STOMPFrameFromData:(NSData *)data {
-    NSData *strData = [data subdataWithRange:NSMakeRange(0, MIN(500, data.length))];
+    NSData *strData = [data subdataWithRange:NSMakeRange(0, [data length])];
 	NSString *msg = [[NSString alloc] initWithData:strData encoding:NSUTF8StringEncoding];
     LogDebug(@"<<< %@", msg);
     NSMutableArray *contents = (NSMutableArray *)[[msg componentsSeparatedByString:kLineFeed] mutableCopy];
-	if([[contents objectAtIndex:0] isEqual:@""]) {
+  while ([[contents objectAtIndex:0] isEqual:@""]) {
 		[contents removeObjectAtIndex:0];
 	}
 	NSString *command = [[contents objectAtIndex:0] copy];
 	NSMutableDictionary *headers = [[NSMutableDictionary alloc] init];
-  NSData *body = nil;
+	NSMutableString *body = [[NSMutableString alloc] init];
 	BOOL hasHeaders = NO;
     [contents removeObjectAtIndex:0];
 	for(NSString *line in contents) {
 		if(hasHeaders) {
-      NSRange range = [data rangeOfData:[line dataUsingEncoding:NSUTF8StringEncoding] options:0 range:NSMakeRange(0, [data length])];
-      if (range.location != NSNotFound) {
-        data = [data subdataWithRange:NSMakeRange(range.location, data.length - range.location)];
-      }
+            for (int i=0; i < [line length]; i++) {
+                unichar c = [line characterAtIndex:i];
+                if (c != '\x00') {
+                    [body appendString:[NSString stringWithFormat:@"%c", c]];
+                }
+            }
 		} else {
 			if ([line isEqual:@""]) {
 				hasHeaders = YES;
@@ -172,7 +174,7 @@
 
 - (id)initWithClient:(STOMPClient *)theClient
              headers:(NSDictionary *)theHeaders
-                body:(NSData *)theBody {
+                body:(NSString *)theBody {
     if (self = [super initWithCommand:kCommandMessage
                               headers:theHeaders
                                  body:theBody]) {
@@ -356,7 +358,7 @@ CFAbsoluteTime serverActivity;
 }
 
 - (void)sendTo:(NSString *)destination
-          body:(NSData *)body {
+          body:(NSString *)body {
     [self sendTo:destination
          headers:nil
             body:body];
@@ -432,7 +434,7 @@ CFAbsoluteTime serverActivity;
 
 - (void)sendFrameWithCommand:(NSString *)command
                      headers:(NSDictionary *)headers
-                        body:(NSData *)body {
+                        body:(NSString *)body {
     if ([self.socket isDisconnected]) {
         return;
     }
@@ -546,9 +548,10 @@ CFAbsoluteTime serverActivity;
    didReadData:(NSData *)data
        withTag:(long)tag {
     serverActivity = CFAbsoluteTimeGetCurrent();
+    [self readFrame];
     STOMPFrame *frame = [STOMPFrame STOMPFrameFromData:data];
     [self receivedFrame:frame];
-    [self readFrame];
+
 }
 
 - (void)socket:(GCDAsyncSocket *)sock didReadPartialDataOfLength:(NSUInteger)partialLength tag:(long)tag {
